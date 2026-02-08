@@ -1,0 +1,20 @@
+# Dependencies and build
+node_modules/
+dist/
+
+# Environment and secrets
+.env
+.env.local
+
+# Runtime data (do not commit)
+.remember-tokens.json
+.user-data.json
+hdd/
+local/
+mypass/
+
+# Logs and OS
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db

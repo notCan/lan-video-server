@@ -1,0 +1,15 @@
+{
+  "name": "LAN Video Server",
+  "short_name": "VideoLAN",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0e0e0e",
+  "theme_color": "#0e0e0e",
+  "icons": [
+    {
+      "src": "/icons/play.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
