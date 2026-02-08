@@ -6,10 +6,7 @@
   "background_color": "#0e0e0e",
   "theme_color": "#0e0e0e",
   "icons": [
-    {
-      "src": "/icons/play.svg",
-      "sizes": "any",
-      "type": "image/svg+xml"
-    }
+    { "src": "/icons/lan-video-server.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/lan-video-server.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
   ]
 }
