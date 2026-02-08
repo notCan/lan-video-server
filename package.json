@@ -1,6 +1,6 @@
 {
   "name": "video-server",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "LAN üzerinden video streaming server",
   "main": "server.js",
   "bin": "server.js",
@@ -9,11 +9,14 @@
     "build": "pkg . --targets node18-win-x64 --output dist/video-server.exe"
   },
   "dependencies": {
+    "bcrypt": "^5.1.1",
+    "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "dotenv": "^17.2.4",
     "express": "^4.19.2",
-    "express-session": "^1.19.0",
-    "qrcode-terminal": "^0.12.0"
+    "jsonwebtoken": "^9.0.2",
+    "qrcode-terminal": "^0.12.0",
+    "uuid": "^9.0.0"
   },
   "devDependencies": {
     "pkg": "^5.8.1"

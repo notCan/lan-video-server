@@ -30,11 +30,11 @@ for /f "tokens=2 delims=:" %%A in ('ipconfig ^| findstr "IPv4"') do (
 
 set IP=!IP: =!
 
-set QR_URL=http://!IP!:3366
+set QR_URL=http://!IP!:3333
 
 echo ================================
 echo   Telefonda gir:
-echo   http://!IP!:3366
+echo   http://!IP!:3333
 echo ================================
 echo.
 echo QR KOD (telefonla okut):

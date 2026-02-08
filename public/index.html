@@ -647,6 +647,10 @@
       font-size: 14px;
       margin-bottom: 10px;
     }
+    .login-box.hidden { display: none; }
+    .login-switch { margin: 14px 0 0; font-size: 14px; opacity: 0.9; }
+    .btn-link { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0; text-decoration: underline; font-size: inherit; }
+    .btn-link:hover { opacity: 0.9; }
 
     #resumeBar {
       display: none;
@@ -698,7 +702,7 @@
 <body>
 
   <div id="login">
-    <div class="login-box">
+    <div id="loginCard" class="login-box">
       <h2>Giriş yap</h2>
       <p id="loginError" class="login-error" style="display:none;"></p>
       <form id="loginForm">
@@ -706,10 +710,21 @@
         <input type="password" id="password" name="password" placeholder="Şifre" required
           autocomplete="current-password">
         <label class="login-remember">
-          <input type="checkbox" id="rememberMe" name="rememberMe"> Beni hatırla (oturum açık kalsın)
+          <input type="checkbox" id="rememberMe" name="rememberMe" checked> Beni hatırla
         </label>
-        <button type="submit" class="btn">Giriş</button>
+        <button type="submit" class="btn">Giriş yap</button>
       </form>
+      <p class="login-switch">Hesabınız yok mu? <button type="button" id="btnShowRegister" class="btn-link">Kayıt ol</button></p>
+    </div>
+    <div id="registerCard" class="login-box hidden">
+      <h2>Kayıt ol</h2>
+      <p id="registerError" class="login-error" style="display:none;"></p>
+      <form id="registerForm">
+        <input type="text" id="regUsername" name="username" placeholder="Kullanıcı adı" required autocomplete="username" minlength="2">
+        <input type="password" id="regPassword" name="password" placeholder="Şifre" required autocomplete="new-password">
+        <button type="submit" class="btn">Kayıt ol</button>
+      </form>
+      <p class="login-switch">Zaten hesabınız var mı? <button type="button" id="btnShowLogin" class="btn-link">Giriş yap</button></p>
     </div>
   </div>
 
@@ -807,7 +822,6 @@
     const RESUME_KEY = "videoServerResume";
     const LAST_WATCHED_KEY = "videoServerLastWatched";
     const FAVORITES_KEY = "videoServerFavorites";
-    const REMEMBER_TOKEN_KEY = "videoServerRememberToken";
 
     let currentPath = "";
     let lastWatchedExpanded = false;
@@ -1014,16 +1028,12 @@
     }
 
     function logout() {
-      var token;
-      try { token = localStorage.getItem(REMEMBER_TOKEN_KEY); } catch (e) { }
-      fetch("/api/logout", {
+      fetch("/api/auth/logout", {
         method: "POST",
         ...fetchOpts,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(token ? { token: token } : {})
+        headers: { "Content-Type": "application/json" }
       })
         .then(function () {
-          try { localStorage.removeItem(REMEMBER_TOKEN_KEY); } catch (e) { }
           closeVideo();
           showLogin();
         });
@@ -1033,12 +1043,12 @@
       e.preventDefault();
       loginError.style.display = "none";
       var rememberMe = document.getElementById("rememberMe").checked;
-      fetch("/api/login", {
+      fetch("/api/auth/login", {
         method: "POST",
         ...fetchOpts,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          username: document.getElementById("username").value,
+          username: document.getElementById("username").value.trim(),
           password: document.getElementById("password").value,
           rememberMe: rememberMe
         })
@@ -1046,13 +1056,45 @@
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
         .then(function (_ref) {
           var ok = _ref.ok, d = _ref.d;
-          if (ok) {
-            if (d.token) try { localStorage.setItem(REMEMBER_TOKEN_KEY, d.token); } catch (e) { }
-            showApp();
-          } else showLogin(d.error || "Giriş başarısız");
+          if (ok) { showApp(); } else { showLogin(d.error || "Giriş başarısız"); }
         })
         .catch(function () { showLogin("Bağlantı hatası"); });
     });
+
+    (function initRegister() {
+      var loginCard = document.getElementById("loginCard");
+      var registerCard = document.getElementById("registerCard");
+      var btnShowRegister = document.getElementById("btnShowRegister");
+      var btnShowLogin = document.getElementById("btnShowLogin");
+      var registerForm = document.getElementById("registerForm");
+      var registerError = document.getElementById("registerError");
+      if (btnShowRegister) btnShowRegister.addEventListener("click", function () {
+        loginCard.classList.add("hidden"); registerCard.classList.remove("hidden"); registerError.style.display = "none";
+      });
+      if (btnShowLogin) btnShowLogin.addEventListener("click", function () {
+        registerCard.classList.add("hidden"); loginCard.classList.remove("hidden"); loginError.style.display = "none";
+      });
+      if (registerForm) registerForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        registerError.style.display = "none";
+        var username = document.getElementById("regUsername").value.trim();
+        var password = document.getElementById("regPassword").value;
+        fetch("/api/auth/register", {
+          method: "POST",
+          ...fetchOpts,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: username, password: password })
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+          .then(function (_ref) {
+            if (_ref.ok) showApp(); else {
+              registerError.textContent = _ref.d.error || "Kayıt olunamadı";
+              registerError.style.display = "block";
+            }
+          })
+          .catch(function () { registerError.textContent = "Bağlantı hatası"; registerError.style.display = "block"; });
+      });
+    })();
 
     document.getElementById("resumeBtn").addEventListener("click", function () {
       const saved = getResumeState();
@@ -1188,30 +1230,12 @@
       });
     })();
 
-    function tryRestoreSession(cb) {
-      var token;
-      try { token = localStorage.getItem(REMEMBER_TOKEN_KEY); } catch (e) { }
-      if (!token) { cb(false); return; }
-      fetch("/api/restore-session", {
-        method: "POST",
-        ...fetchOpts,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: token })
-      })
-        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
-        .then(function (_ref) {
-          if (_ref.ok) cb(true); else { try { localStorage.removeItem(REMEMBER_TOKEN_KEY); } catch (e) { } cb(false); }
-        })
-        .catch(function () { cb(false); });
-    }
-    fetch("/api/auth-check", fetchOpts)
+    fetch("/api/auth/me", fetchOpts)
       .then(function (r) {
-        if (r.ok) showApp();
-        else tryRestoreSession(function (restored) { if (restored) showApp(); else showLogin(); });
+        if (r.ok) return r.json().then(function (d) { showApp(); });
+        showLogin();
       })
-      .catch(function () {
-        tryRestoreSession(function (restored) { if (restored) showApp(); else showLogin(); });
-      });
+      .catch(function () { showLogin(); });
 
     function seek(sec) {
       player.currentTime += sec;

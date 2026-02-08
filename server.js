@@ -1,59 +1,38 @@
 const path = require("path");
-const crypto = require("crypto");
+const fs = require("fs");
+const { v4: uuidv4 } = require("uuid");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const cookieParser = require("cookie-parser");
 
 const APP_DIR = typeof process.pkg !== "undefined" ? path.dirname(process.execPath) : __dirname;
 require("dotenv").config({ path: path.join(APP_DIR, ".env") });
 const express = require("express");
-const fs = require("fs");
 const cors = require("cors");
-const session = require("express-session");
 
-const REMEMBER_TOKENS_PATH = path.join(APP_DIR, ".remember-tokens.json");
+const DATA_DIR = path.join(APP_DIR, "data");
+const USERS_FILE = path.join(DATA_DIR, "users.json");
 const USER_DATA_PATH = path.join(APP_DIR, ".user-data.json");
-const REMEMBER_TOKEN_DAYS = 30;
+const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || "video-lan-jwt-secret-change-in-production";
+const COOKIE_NAME = "token";
+const REMEMBER_ME_DAYS = 30;
 
-function loadRememberTokens() {
+function ensureDirs() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   try {
-    const raw = fs.readFileSync(REMEMBER_TOKENS_PATH, "utf8");
-    const data = JSON.parse(raw);
-    return typeof data === "object" && data !== null ? data : {};
-  } catch (e) {
-    return {};
+    fs.accessSync(USERS_FILE);
+  } catch {
+    fs.writeFileSync(USERS_FILE, JSON.stringify({ users: [] }, null, 2));
   }
 }
 
-function saveRememberTokens(tokens) {
-  try {
-    fs.writeFileSync(REMEMBER_TOKENS_PATH, JSON.stringify(tokens), "utf8");
-  } catch (e) {}
+function readUsers() {
+  const raw = fs.readFileSync(USERS_FILE, "utf8");
+  return JSON.parse(raw);
 }
 
-function createRememberToken() {
-  const tokens = loadRememberTokens();
-  const now = Date.now();
-  const expire = now + REMEMBER_TOKEN_DAYS * 24 * 60 * 60 * 1000;
-  for (const t of Object.keys(tokens)) {
-    if (tokens[t].expire < now) delete tokens[t];
-  }
-  const token = crypto.randomBytes(32).toString("hex");
-  tokens[token] = { expire };
-  saveRememberTokens(tokens);
-  return token;
-}
-
-function validateRememberToken(token) {
-  if (!token || typeof token !== "string") return false;
-  const tokens = loadRememberTokens();
-  const now = Date.now();
-  const ent = tokens[token];
-  return !!(ent && ent.expire >= now);
-}
-
-function revokeRememberToken(token) {
-  if (!token || typeof token !== "string") return;
-  const tokens = loadRememberTokens();
-  delete tokens[token];
-  saveRememberTokens(tokens);
+function writeUsers(data) {
+  fs.writeFileSync(USERS_FILE, JSON.stringify(data, null, 2));
 }
 
 function loadUserData() {
@@ -67,15 +46,13 @@ function loadUserData() {
 }
 
 function saveUserData(data) {
-  try {
-    fs.writeFileSync(USER_DATA_PATH, JSON.stringify(data), "utf8");
-  } catch (e) {}
+  fs.writeFileSync(USER_DATA_PATH, JSON.stringify(data), "utf8");
 }
 
-function getCurrentUserData(username) {
-  if (!username || typeof username !== "string") return { favorites: [], lastWatched: [] };
+function getCurrentUserData(userId) {
+  if (!userId || typeof userId !== "string") return { favorites: [], lastWatched: [] };
   const all = loadUserData();
-  const user = all[username];
+  const user = all[userId];
   if (!user || typeof user !== "object") return { favorites: [], lastWatched: [] };
   const favorites = Array.isArray(user.favorites) ? user.favorites : [];
   const lastWatched = Array.isArray(user.lastWatched) ? user.lastWatched : [];
@@ -85,25 +62,29 @@ function getCurrentUserData(username) {
   };
 }
 
-function setCurrentUserData(username, payload) {
-  if (!username || typeof username !== "string") return;
+function setCurrentUserData(userId, payload) {
+  if (!userId || typeof userId !== "string") return;
   const all = loadUserData();
-  all[username] = {
+  all[userId] = {
     favorites: Array.isArray(payload.favorites) ? payload.favorites.slice(0, 500) : [],
     lastWatched: Array.isArray(payload.lastWatched) ? payload.lastWatched.slice(0, 10) : []
   };
   saveUserData(all);
 }
 
-const app = express();
-const PORT = 3366;
-
-const LOGIN_USER = (process.env.LOGIN_USERNAME || process.env.USERNAME || "").trim();
-const LOGIN_PASS = (process.env.LOGIN_PASSWORD || process.env.PASSWORD || "").trim();
-if (!LOGIN_USER || !LOGIN_PASS) {
-  console.error(".env dosyasında USERNAME ve PASSWORD (veya LOGIN_USERNAME ve LOGIN_PASSWORD) tanımlı olmalı.");
-  process.exit(1);
+function authFromCookie(req) {
+  const token = req.cookies?.[COOKIE_NAME];
+  if (!token) return null;
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    return { id: payload.userId, username: payload.username };
+  } catch {
+    return null;
+  }
 }
+
+const app = express();
+const PORT = 3333;
 
 const CONFIG_PATH = path.join(APP_DIR, "config.json");
 
@@ -138,86 +119,74 @@ const MIME_BY_EXT = {
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || "video-lan-session-secret",
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      sameSite: "lax"
-    }
-  })
-);
-
-app.use((req, res, next) => {
-  const payload = {
-    method: req.method,
-    url: req.originalUrl || req.url,
-    query: req.query && Object.keys(req.query).length ? req.query : undefined
-  };
-  if (req.body && typeof req.body === "object" && Object.keys(req.body).length) {
-    const body = { ...req.body };
-    if (body.password !== undefined) body.password = "[REDACTED]";
-    if (body.token !== undefined) body.token = body.token ? "[REDACTED]" : "";
-    payload.body = body;
-  }
-  next();
-});
-
+app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
 
 function requireAuth(req, res, next) {
-  if (req.session && req.session.user) return next();
-  res.status(401).json({ error: "Giriş gerekli" });
+  const user = authFromCookie(req);
+  if (!user) return res.status(401).json({ error: "Giriş gerekli" });
+  req.user = user;
+  next();
 }
 
-app.post("/api/login", (req, res) => {
-  const username = (req.body && req.body.username != null ? String(req.body.username) : "").trim();
-  const password = (req.body && req.body.password != null ? String(req.body.password) : "").trim();
-  const rememberMe = !!(req.body && req.body.rememberMe);
-  if (username === LOGIN_USER && password === LOGIN_PASS) {
-    req.session.user = username;
-    if (rememberMe) {
-      const token = createRememberToken();
-      return res.json({ ok: true, token });
-    }
-    return res.json({ ok: true });
+app.post("/api/auth/register", async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+    if (!username || !password) return res.status(400).json({ error: "Kullanıcı adı ve şifre gerekli" });
+    const trimmed = (String(username)).trim().toLowerCase();
+    if (trimmed.length < 2) return res.status(400).json({ error: "Kullanıcı adı en az 2 karakter olmalı" });
+    const data = readUsers();
+    if (data.users.some(u => u.username.toLowerCase() === trimmed)) return res.status(400).json({ error: "Bu kullanıcı adı alınmış" });
+    const hash = await bcrypt.hash(password, 10);
+    const user = { id: uuidv4(), username: trimmed, passwordHash: hash };
+    data.users.push(user);
+    writeUsers(data);
+    const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET, { expiresIn: REMEMBER_ME_DAYS + "d" });
+    res.cookie(COOKIE_NAME, token, { httpOnly: true, sameSite: "lax", maxAge: REMEMBER_ME_DAYS * 24 * 60 * 60 * 1000 });
+    res.status(201).json({ user: { id: user.id, username: user.username } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Kayıt olunamadı" });
   }
-  res.status(401).json({ error: "Kullanıcı adı veya şifre hatalı" });
 });
 
-app.post("/api/restore-session", (req, res) => {
-  const token = (req.body && req.body.token != null ? String(req.body.token) : "").trim();
-  if (!validateRememberToken(token)) {
-    return res.status(401).json({ error: "Geçersiz veya süresi dolmuş token" });
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const { username, password, rememberMe } = req.body || {};
+    if (!username || !password) return res.status(400).json({ error: "Kullanıcı adı ve şifre gerekli" });
+    const data = readUsers();
+    const user = data.users.find(u => u.username.toLowerCase() === String(username).trim().toLowerCase());
+    if (!user || !(await bcrypt.compare(password, user.passwordHash))) return res.status(401).json({ error: "Kullanıcı adı veya şifre hatalı" });
+    const maxAge = rememberMe ? REMEMBER_ME_DAYS * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+    const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET, { expiresIn: rememberMe ? REMEMBER_ME_DAYS + "d" : "1d" });
+    res.cookie(COOKIE_NAME, token, { httpOnly: true, sameSite: "lax", maxAge });
+    res.json({ user: { id: user.id, username: user.username } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Giriş yapılamadı" });
   }
-  req.session.user = LOGIN_USER;
-  res.json({ ok: true });
 });
 
-app.get("/api/auth-check", (req, res) => {
-  if (req.session && req.session.user) return res.json({ ok: true });
-  res.status(401).json({ error: "Giriş gerekli" });
+app.post("/api/auth/logout", (req, res) => {
+  res.clearCookie(COOKIE_NAME);
+  res.status(204).end();
 });
 
-app.post("/api/logout", (req, res) => {
-  const token = (req.body && req.body.token != null ? String(req.body.token) : "").trim();
-  if (token) revokeRememberToken(token);
-  req.session.destroy(() => {});
-  res.json({ ok: true });
+app.get("/api/auth/me", (req, res) => {
+  const user = authFromCookie(req);
+  if (!user) return res.status(401).json({ error: "Oturum açmanız gerekiyor" });
+  res.json({ user: { id: user.id, username: user.username } });
 });
 
 app.get("/api/user-data", requireAuth, (req, res) => {
-  const data = getCurrentUserData(req.session.user);
+  const data = getCurrentUserData(req.user.id);
   res.json(data);
 });
 
 app.post("/api/user-data", requireAuth, (req, res) => {
   const favorites = req.body && req.body.favorites;
   const lastWatched = req.body && req.body.lastWatched;
-  setCurrentUserData(req.session.user, {
+  setCurrentUserData(req.user.id, {
     favorites: Array.isArray(favorites) ? favorites : [],
     lastWatched: Array.isArray(lastWatched) ? lastWatched : []
   });
@@ -385,6 +354,7 @@ app.get("/subtitle", requireAuth, (req, res) => {
 });
 
 app.listen(PORT, "0.0.0.0", () => {
+  ensureDirs();
   VIDEO_ROOTS.forEach((r, i) => {
     if (!fs.existsSync(r.path)) {
       fs.mkdirSync(r.path, { recursive: true });
