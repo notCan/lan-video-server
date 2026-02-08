@@ -6,7 +6,8 @@ dist/
 .env
 .env.local
 
-# Runtime data (do not commit)
+# Runtime data and local config (do not commit)
+config.json
 data/
 .remember-tokens.json
 .user-data.json
