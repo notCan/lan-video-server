@@ -1,6 +1,6 @@
 {
-  "name": "LAN Video Server",
-  "short_name": "VideoLAN",
+  "name": "videoLAN",
+  "short_name": "videoLAN",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0e0e0e",
