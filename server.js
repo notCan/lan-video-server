@@ -305,6 +305,153 @@ app.get("/video", requireAuth, (req, res) => {
 });
 
 const SUBTITLE_EXTENSIONS = [".vtt", ".srt"];
+const OPENSUBTITLES_API_KEY = process.env.OPENSUBTITLES_API_KEY || "";
+const OPENSUBTITLES_BASE = "https://api.opensubtitles.com/api/v1";
+
+function opensubtitlesMissing(res) {
+  if (!OPENSUBTITLES_API_KEY || OPENSUBTITLES_API_KEY === "your_open_subtitles_api_key_here") {
+    res.status(503).json({ error: "OpenSubtitles API anahtarı yapılandırılmamış" });
+    return true;
+  }
+  return false;
+}
+
+app.get("/api/subtitles/search", requireAuth, async (req, res) => {
+  if (opensubtitlesMissing(res)) return;
+  const q = (req.query.q || req.query.query || "").trim();
+  const languages = (req.query.languages || req.query.lang || "tr").trim() || "tr";
+  if (!q) return res.status(400).json({ error: "Arama sorgusu (q) gerekli" });
+  try {
+    const url = new URL(OPENSUBTITLES_BASE + "/subtitles");
+    url.searchParams.set("query", q);
+    url.searchParams.set("languages", languages);
+    const r = await fetch(url.toString(), {
+      method: "GET",
+      headers: {
+        "Api-Key": OPENSUBTITLES_API_KEY,
+        "Content-Type": "application/json",
+        "User-Agent": "lan-video-server/1.0"
+      }
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      return res.status(r.status === 429 ? 429 : 502).json({
+        error: r.status === 429 ? "Çok fazla istek, lütfen bekleyin." : "OpenSubtitles arama hatası",
+        details: text.slice(0, 200)
+      });
+    }
+    const data = await r.json();
+    const list = [];
+    const items = Array.isArray(data.data) ? data.data : [];
+    for (const item of items) {
+      const att = item && item.attributes ? item.attributes : {};
+      const files = Array.isArray(att.files) ? att.files : [];
+      const fileId = files[0] && (files[0].file_id != null) ? files[0].file_id : (att.file_id != null ? att.file_id : null);
+      if (fileId == null) continue;
+      const release = att.release || att.file_name || att.filename || String(fileId);
+      const lang = (att.language || att.lang || "").toLowerCase();
+      list.push({
+        file_id: fileId,
+        release_name: release,
+        language: lang,
+        format: (files[0] && files[0].file_name) ? path.extname(files[0].file_name).toLowerCase() : ".srt"
+      });
+    }
+    res.json(list);
+  } catch (err) {
+    console.error("OpenSubtitles search error:", err.message);
+    res.status(500).json({ error: "Arama sırasında hata oluştu" });
+  }
+});
+
+async function fetchSubtitleContent(fileId) {
+  const url = OPENSUBTITLES_BASE + "/download";
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Api-Key": OPENSUBTITLES_API_KEY,
+      "Content-Type": "application/json",
+      "User-Agent": "lan-video-server/1.0"
+    },
+    body: JSON.stringify({ file_id: Number(fileId) })
+  });
+  if (!r.ok) {
+    const text = await r.text();
+    throw new Error(r.status + " " + text.slice(0, 200));
+  }
+  const contentType = (r.headers.get("content-type") || "").toLowerCase();
+  if (contentType.includes("application/json")) {
+    const data = await r.json();
+    const link = data && (data.link != null ? data.link : data.url);
+    if (link) {
+      const r2 = await fetch(link, { headers: { "User-Agent": "lan-video-server/1.0" } });
+      if (!r2.ok) throw new Error("Download link failed " + r2.status);
+      return await r2.text();
+    }
+    if (typeof data.content === "string") return data.content;
+    if (data.data && typeof data.data.content === "string") return data.data.content;
+  } else {
+    return await r.text();
+  }
+  throw new Error("Altyazı içeriği alınamadı");
+}
+
+app.get("/api/subtitles/download", requireAuth, async (req, res) => {
+  if (opensubtitlesMissing(res)) return;
+  const fileId = req.query.file_id;
+  if (fileId == null || fileId === "") return res.status(400).json({ error: "file_id gerekli" });
+  try {
+    const content = await fetchSubtitleContent(fileId);
+    const isVtt = /^\s*WEBVTT\b/m.test(content);
+    res.setHeader("Content-Type", "text/vtt; charset=utf-8");
+    res.send(isVtt ? content : srtToVtt(content));
+  } catch (err) {
+    console.error("OpenSubtitles download error:", err.message);
+    res.status(err.message.startsWith("429") ? 429 : 502).json({ error: "Altyazı indirilemedi" });
+  }
+});
+
+app.get("/api/subtitles/save", requireAuth, async (req, res) => {
+  if (opensubtitlesMissing(res)) return;
+  const fileId = req.query.file_id;
+  const rawVideoPath = (req.query.videoPath || "").replace(/\\/g, "/").trim();
+  if (fileId == null || fileId === "" || !rawVideoPath) {
+    return res.status(400).json({ error: "file_id ve videoPath gerekli" });
+  }
+  const parts = rawVideoPath.split("/").filter(Boolean);
+  if (parts.length === 0) return res.status(400).json({ error: "Geçersiz videoPath" });
+  const rootIndex = parseInt(parts[0], 10);
+  if (isNaN(rootIndex) || rootIndex < 0 || rootIndex >= VIDEO_ROOTS.length) {
+    return res.status(400).json({ error: "Geçersiz video kökü" });
+  }
+  const rootDir = VIDEO_ROOTS[rootIndex].path;
+  const innerPath = path.normalize(parts.slice(1).join(path.sep)).replace(/\\/g, "/");
+  const videoFilePath = path.resolve(rootDir, innerPath);
+  if (!videoFilePath.startsWith(path.resolve(rootDir))) return res.status(400).json({ error: "Geçersiz videoPath" });
+  const targetDir = path.dirname(videoFilePath);
+  const videoBaseName = path.basename(videoFilePath, path.extname(videoFilePath));
+  const srtPath = path.join(targetDir, videoBaseName + ".srt");
+  try {
+    const content = await fetchSubtitleContent(fileId);
+    const isVtt = /^\s*WEBVTT\b/m.test(content);
+    const toWrite = isVtt ? vttToSrt(content) : content;
+    fs.writeFileSync(srtPath, toWrite, "utf8");
+    const rel = path.relative(rootDir, srtPath).replace(/\\/g, "/");
+    res.json({ path: String(rootIndex) + "/" + rel });
+  } catch (err) {
+    console.error("OpenSubtitles save error:", err.message);
+    res.status(err.message.startsWith("429") ? 429 : 502).json({ error: "Altyazı kaydedilemedi" });
+  }
+});
+
+function vttToSrt(vtt) {
+  return vtt
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/^WEBVTT\s*\n*/i, "")
+    .replace(/(\d{2}:\d{2}:\d{2})\.(\d{3})/g, "$1,$2")
+    .trim();
+}
 
 app.get("/api/subtitles", requireAuth, (req, res) => {
   const rawPath = (req.query.file || "").replace(/\\/g, "/").trim();
