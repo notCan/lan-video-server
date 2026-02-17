@@ -62,11 +62,38 @@
     }
 
     /* PLAYER */
+    .video-sub-wrap {
+      position: relative;
+      width: 100%;
+    }
+
     #player {
       width: 100%;
       max-height: 45vh;
       background: black;
       display: block;
+    }
+
+    .subtitle-overlay {
+      position: absolute;
+      left: 50%;
+      bottom: 12%;
+      transform: translateX(-50%);
+      padding: 4px 12px;
+      max-width: 100%;
+      text-align: center;
+      font-size: 18px;
+      line-height: 1.4;
+      color: #fff;
+      text-shadow: 0 1px 2px #000, 0 0 4px #000;
+      pointer-events: none;
+      white-space: pre-line;
+      transition: transform 0.05s ease-out;
+      box-sizing: border-box;
+    }
+
+    .subtitle-overlay:empty {
+      display: none;
     }
 
     /* CONTROLS */
@@ -316,6 +343,48 @@
       min-width: 140px;
       max-width: 100%;
       cursor: pointer;
+    }
+
+    #subtitleRow .subtitle-settings-toggle {
+      margin-left: 4px;
+    }
+
+    .subtitle-settings-row {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      padding: 8px 12px 10px;
+      background: var(--panel);
+      border-bottom: 1px solid #222;
+    }
+
+    .subtitle-settings-row.visible {
+      display: flex;
+    }
+
+    .subtitle-settings-row .subtitle-settings-row1,
+    .subtitle-settings-row .subtitle-settings-row2 {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .subtitle-settings-row .btn-icon {
+      padding: 6px 10px;
+      font-size: 14px;
+    }
+
+    .subtitle-settings-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      font-size: 12px;
+      background: #252525;
+      border: 1px solid #333;
+      border-radius: 8px;
+      color: var(--text);
+      opacity: 0.95;
     }
 
     #extraPanelWrap {
@@ -731,7 +800,10 @@
   <div id="app" class="hidden">
     <div class="player-sticky">
       <div id="videoTitle"></div>
-      <video id="player" controls disableRemotePlayback controlsList="noremoteplayback"></video>
+      <div class="video-sub-wrap">
+        <video id="player" controls disableRemotePlayback controlsList="noremoteplayback"></video>
+        <div id="subtitleOverlay" class="subtitle-overlay" aria-hidden="true"></div>
+      </div>
       <div id="controls">
         <div class="controls-row1">
           <button type="button" class="btn controls-num" onclick="seek(-30)">−30</button>
@@ -779,6 +851,25 @@
             <select id="subtitleSelect">
               <option value="">Yok</option>
             </select>
+            <button type="button" class="btn btn-icon subtitle-settings-toggle" id="subtitleSettingsToggle" title="Altyazı ayarları" aria-label="Altyazı ayarları">⚙️</button>
+          </div>
+          <div id="subtitleSettingsRow" class="subtitle-settings-row" aria-hidden="true">
+            <div class="subtitle-settings-row1">
+              <button type="button" class="btn btn-icon" id="subFontSmaller" title="Fontu küçült">−</button>
+              <button type="button" class="btn btn-icon" id="subDelayBack" title="Altyazıyı 100ms geri al">⏪</button>
+              <button type="button" class="btn btn-icon" id="subLeft" title="Altyazıyı sola kaydır">◀</button>
+              <button type="button" class="btn btn-icon" id="subDown" title="Altyazıyı aşağı kaydır">▼</button>
+              <button type="button" class="btn btn-icon" id="subUp" title="Altyazıyı yukarı kaydır">▲</button>
+              <button type="button" class="btn btn-icon" id="subRight" title="Altyazıyı sağa kaydır">▶</button>
+              <button type="button" class="btn btn-icon" id="subDelayFwd" title="Altyazıyı 100ms ileri al">⏩</button>
+              <button type="button" class="btn btn-icon" id="subFontBigger" title="Fontu büyüt">+</button>
+            </div>
+            <div class="subtitle-settings-row2">
+              <span id="subDelayChip" class="subtitle-settings-chip" aria-live="polite">Gecikme: 0 ms</span>
+              <span id="subFontSizeChip" class="subtitle-settings-chip" aria-live="polite">Font: 18px</span>
+              <button type="button" class="btn btn-icon" id="subWidthNarrow" title="Altyazı genişliğini daralt">⊟</button>
+              <button type="button" class="btn btn-icon" id="subWidthWiden" title="Altyazı genişliğini genişlet">⊞</button>
+            </div>
           </div>
           <div id="extraPanelActions" class="extra-panel-actions">
             <button type="button" class="btn btn-icon" id="endBehaviorBtn" title="Bitiş davranışı">🔁</button>
@@ -838,6 +929,93 @@
     const END_BEHAVIOR_ICONS = ["🔁✕", "🔁1", "🔁A"];
     const END_BEHAVIOR_TITLES = ["Hiçbir şey", "Tekrar oynat", "Sonrakine geç"];
     let endBehaviorIndex = 2;
+
+    const SUBTITLE_SETTINGS_KEY = "videoServerSubtitleSettings";
+    const SUBTITLE_FONT_MIN = 12;
+    const SUBTITLE_FONT_MAX = 36;
+    const SUBTITLE_WIDTH_MIN = 30;
+    const SUBTITLE_WIDTH_MAX = 100;
+    let subtitleCues = [];
+    let subtitleDelayMs = 0;
+    let subtitleOffsetX = 0;
+    let subtitleOffsetY = 0;
+    let subtitleFontSize = 18;
+    let subtitleWidthPct = 100;
+
+    function loadSubtitleSettings() {
+      try {
+        var s = localStorage.getItem(SUBTITLE_SETTINGS_KEY);
+        if (s) {
+          var o = JSON.parse(s);
+          if (typeof o.delayMs === "number") subtitleDelayMs = o.delayMs;
+          if (typeof o.offsetX === "number") subtitleOffsetX = o.offsetX;
+          if (typeof o.offsetY === "number") subtitleOffsetY = o.offsetY;
+          if (typeof o.fontSize === "number" && o.fontSize >= SUBTITLE_FONT_MIN && o.fontSize <= SUBTITLE_FONT_MAX) subtitleFontSize = o.fontSize;
+          if (typeof o.widthPct === "number" && o.widthPct >= SUBTITLE_WIDTH_MIN && o.widthPct <= SUBTITLE_WIDTH_MAX) subtitleWidthPct = o.widthPct;
+        }
+      } catch (e) { }
+    }
+    function saveSubtitleSettings() {
+      try {
+        localStorage.setItem(SUBTITLE_SETTINGS_KEY, JSON.stringify({
+          delayMs: subtitleDelayMs,
+          offsetX: subtitleOffsetX,
+          offsetY: subtitleOffsetY,
+          fontSize: subtitleFontSize,
+          widthPct: subtitleWidthPct
+        }));
+      } catch (e) { }
+    }
+    function updateSubtitleChips() {
+      var delayChip = document.getElementById("subDelayChip");
+      var fontSizeChip = document.getElementById("subFontSizeChip");
+      if (delayChip) delayChip.textContent = subtitleDelayMs === 0 ? "Gecikme: 0 ms" : (subtitleDelayMs > 0 ? "+" : "") + subtitleDelayMs + " ms";
+      if (fontSizeChip) fontSizeChip.textContent = "Font: " + subtitleFontSize + "px";
+    }
+
+    function parseVtt(vttText) {
+      var cues = [];
+      var lines = vttText.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+      var i = 0;
+      while (i < lines.length && !/^\d{2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3}/.test(lines[i])) i++;
+      while (i < lines.length) {
+        var timeLine = lines[i];
+        var m = timeLine.match(/(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})\.(\d{3})/);
+        if (!m) { i++; continue; }
+        var start = parseInt(m[1], 10) * 3600 + parseInt(m[2], 10) * 60 + parseInt(m[3], 10) + parseInt(m[4], 10) / 1000;
+        var end = parseInt(m[5], 10) * 3600 + parseInt(m[6], 10) * 60 + parseInt(m[7], 10) + parseInt(m[8], 10) / 1000;
+        i++;
+        var textLines = [];
+        while (i < lines.length && lines[i].trim() !== "") {
+          textLines.push(lines[i].trim());
+          i++;
+        }
+        if (textLines.length) cues.push({ start: start, end: end, text: textLines.join("\n") });
+        while (i < lines.length && lines[i].trim() === "") i++;
+      }
+      return cues;
+    }
+
+    function updateSubtitleOverlay() {
+      var el = document.getElementById("subtitleOverlay");
+      el.style.fontSize = subtitleFontSize + "px";
+      el.style.maxWidth = subtitleWidthPct + "%";
+      if (subtitleCues.length === 0) {
+        el.textContent = "";
+        el.style.transform = "";
+        return;
+      }
+      var t = player.currentTime + subtitleDelayMs / 1000;
+      var cue = subtitleCues.find(function (c) { return t >= c.start && t <= c.end; });
+      if (cue) {
+        el.textContent = cue.text;
+        el.style.left = "calc(50% + " + subtitleOffsetX + "%)";
+        el.style.bottom = "calc(12% + " + subtitleOffsetY + "%)";
+        el.style.transform = "translateX(-50%)";
+      } else {
+        el.textContent = "";
+      }
+    }
 
     function loadEndBehavior() {
       try {
@@ -1152,7 +1330,7 @@
         if (tooltipWrap) tooltipWrap.classList.remove("slider-active");
       }
       player.addEventListener("loadedmetadata", updateSlider);
-      player.addEventListener("timeupdate", function () { updateDisplay(); updateSlider(); });
+      player.addEventListener("timeupdate", function () { updateDisplay(); updateSlider(); updateSubtitleOverlay(); });
       slider.addEventListener("input", function () {
         player.currentTime = parseFloat(slider.value, 10);
         updateSliderTooltip();
@@ -1297,6 +1475,9 @@
     });
 
     loadEndBehavior();
+    loadSubtitleSettings();
+    updateSubtitleOverlay();
+    updateSubtitleChips();
     var endBehaviorBtnEl = document.getElementById("endBehaviorBtn");
     endBehaviorBtnEl.textContent = END_BEHAVIOR_ICONS[endBehaviorIndex];
     endBehaviorBtnEl.title = END_BEHAVIOR_TITLES[endBehaviorIndex];
@@ -1342,16 +1523,94 @@
       var path = this.value;
       var tracks = player.querySelectorAll("track");
       tracks.forEach(function (t) { t.remove(); });
+      subtitleCues = [];
+      document.getElementById("subtitleOverlay").textContent = "";
       if (path) {
-        var t = document.createElement("track");
-        t.kind = "subtitles";
-        t.srclang = "tr";
-        t.label = "Altyazı";
-        t.default = true;
-        t.src = "/subtitle?file=" + encodeURIComponent(path);
-        player.appendChild(t);
+        fetch("/subtitle?file=" + encodeURIComponent(path), fetchOpts)
+          .then(function (r) { return r.ok ? r.text() : Promise.reject(); })
+          .then(function (text) {
+            subtitleCues = parseVtt(text);
+            updateSubtitleOverlay();
+          })
+          .catch(function () { });
       }
     });
+
+    (function initSubtitleSettings() {
+      var row = document.getElementById("subtitleSettingsRow");
+      var toggle = document.getElementById("subtitleSettingsToggle");
+      toggle.addEventListener("click", function () {
+        row.classList.toggle("visible");
+        row.setAttribute("aria-hidden", row.classList.contains("visible") ? "false" : "true");
+      });
+      var stepX = 8;
+      var stepY = 5;
+      document.getElementById("subFontSmaller").addEventListener("click", function () {
+        if (subtitleFontSize > SUBTITLE_FONT_MIN) {
+          subtitleFontSize -= 2;
+          saveSubtitleSettings();
+          updateSubtitleOverlay();
+          updateSubtitleChips();
+        }
+      });
+      document.getElementById("subFontBigger").addEventListener("click", function () {
+        if (subtitleFontSize < SUBTITLE_FONT_MAX) {
+          subtitleFontSize += 2;
+          saveSubtitleSettings();
+          updateSubtitleOverlay();
+          updateSubtitleChips();
+        }
+      });
+      document.getElementById("subDelayBack").addEventListener("click", function () {
+        subtitleDelayMs -= 100;
+        saveSubtitleSettings();
+        updateSubtitleOverlay();
+        updateSubtitleChips();
+      });
+      document.getElementById("subLeft").addEventListener("click", function () {
+        subtitleOffsetX -= stepX;
+        saveSubtitleSettings();
+        updateSubtitleOverlay();
+      });
+      document.getElementById("subDown").addEventListener("click", function () {
+        subtitleOffsetY += stepY;
+        saveSubtitleSettings();
+        updateSubtitleOverlay();
+      });
+      document.getElementById("subUp").addEventListener("click", function () {
+        subtitleOffsetY -= stepY;
+        saveSubtitleSettings();
+        updateSubtitleOverlay();
+      });
+      document.getElementById("subRight").addEventListener("click", function () {
+        subtitleOffsetX += stepX;
+        saveSubtitleSettings();
+        updateSubtitleOverlay();
+      });
+      document.getElementById("subDelayFwd").addEventListener("click", function () {
+        subtitleDelayMs += 100;
+        saveSubtitleSettings();
+        updateSubtitleOverlay();
+        updateSubtitleChips();
+      });
+      document.getElementById("subWidthNarrow").addEventListener("click", function () {
+        if (subtitleWidthPct > SUBTITLE_WIDTH_MIN) {
+          subtitleWidthPct = Math.max(SUBTITLE_WIDTH_MIN, subtitleWidthPct - 10);
+          saveSubtitleSettings();
+          updateSubtitleOverlay();
+          updateSubtitleChips();
+        }
+      });
+      document.getElementById("subWidthWiden").addEventListener("click", function () {
+        if (subtitleWidthPct < SUBTITLE_WIDTH_MAX) {
+          subtitleWidthPct = Math.min(SUBTITLE_WIDTH_MAX, subtitleWidthPct + 10);
+          saveSubtitleSettings();
+          updateSubtitleOverlay();
+          updateSubtitleChips();
+        }
+      });
+      updateSubtitleChips();
+    })();
 
     function closeVideo() {
       player.pause();
@@ -1361,6 +1620,8 @@
       currentVideoPath = null;
       currentVideoTitle = null;
       currentVideoIndex = -1;
+      subtitleCues = [];
+      document.getElementById("subtitleOverlay").textContent = "";
       clearResumeState();
       document.getElementById("subtitleSelect").innerHTML = "<option value=\"\">Yok</option>";
     }

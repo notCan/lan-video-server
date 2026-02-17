@@ -1,5 +1,6 @@
 const path = require("path");
 const fs = require("fs");
+const iconv = require("iconv-lite");
 const { v4: uuidv4 } = require("uuid");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
@@ -157,8 +158,8 @@ app.post("/api/auth/login", async (req, res) => {
     const data = readUsers();
     const user = data.users.find(u => u.username.toLowerCase() === String(username).trim().toLowerCase());
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) return res.status(401).json({ error: "Kullanıcı adı veya şifre hatalı" });
-    const maxAge = rememberMe ? REMEMBER_ME_DAYS * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
-    const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET, { expiresIn: rememberMe ? REMEMBER_ME_DAYS + "d" : "1d" });
+    const maxAge = REMEMBER_ME_DAYS * 24 * 60 * 60 * 1000;
+    const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET, { expiresIn: REMEMBER_ME_DAYS + "d" });
     res.cookie(COOKIE_NAME, token, { httpOnly: true, sameSite: "lax", maxAge });
     res.json({ user: { id: user.id, username: user.username } });
   } catch (err) {
@@ -333,6 +334,15 @@ app.get("/api/subtitles", requireAuth, (req, res) => {
   }
 });
 
+function srtToVtt(srt) {
+  const vtt = srt
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/^\d+\s*\n/gm, "")
+    .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2");
+  return "WEBVTT\n\n" + vtt.trim() + "\n";
+}
+
 app.get("/subtitle", requireAuth, (req, res) => {
   const rawPath = (req.query.file || "").replace(/\\/g, "/").trim();
   const parts = rawPath.split("/").filter(Boolean);
@@ -348,10 +358,34 @@ app.get("/subtitle", requireAuth, (req, res) => {
     return res.sendStatus(404);
   }
   const ext = path.extname(filePath).toLowerCase();
-  const mime = ext === ".vtt" ? "text/vtt" : "text/plain";
-  res.setHeader("Content-Type", mime);
-  fs.createReadStream(filePath).pipe(res);
+  res.setHeader("Content-Type", "text/vtt; charset=utf-8");
+  try {
+    let raw = null;
+    if (ext === ".vtt") {
+      raw = readSubtitleFileUtf8OrCp1254(filePath);
+      res.send(raw);
+    } else if (ext === ".srt") {
+      raw = readSubtitleFileUtf8OrCp1254(filePath);
+      res.send(srtToVtt(raw));
+    } else {
+      return res.sendStatus(400);
+    }
+  } catch (err) {
+    res.sendStatus(500);
+  }
 });
+
+function readSubtitleFileUtf8OrCp1254(filePath) {
+  const buf = fs.readFileSync(filePath);
+  let text = buf.toString("utf8");
+  if (text.length && text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  if (!/\uFFFD/.test(text)) return text;
+  if (iconv.encodingExists("win1254")) {
+    const decoded = iconv.decode(buf, "win1254");
+    if (decoded && !/\uFFFD/.test(decoded)) return decoded;
+  }
+  return text;
+}
 
 app.listen(PORT, "0.0.0.0", () => {
   ensureDirs();
