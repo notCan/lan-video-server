@@ -462,6 +462,58 @@ document.getElementById("resumeDismissBtn").addEventListener("click", function (
     panel.classList.toggle("extra-panel-closed");
   });
 })();
+
+(function initFullscreen() {
+  var container = document.querySelector(".video-sub-wrap");
+  var btn = document.getElementById("fullscreenBtn");
+  if (!container || !btn) return;
+  function isFullscreen() {
+    return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+  }
+  function getFullscreenEl() {
+    return document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+  }
+  function requestFs() {
+    if (container.requestFullscreen) return container.requestFullscreen();
+    if (container.webkitRequestFullscreen) return container.webkitRequestFullscreen();
+    if (container.mozRequestFullScreen) return container.mozRequestFullScreen();
+    if (container.msRequestFullscreen) return container.msRequestFullscreen();
+    return Promise.reject();
+  }
+  function exitFs() {
+    if (document.exitFullscreen) return document.exitFullscreen();
+    if (document.webkitExitFullscreen) return document.webkitExitFullscreen();
+    if (document.mozCancelFullScreen) return document.mozCancelFullScreen();
+    if (document.msExitFullscreen) return document.msExitFullscreen();
+    return Promise.reject();
+  }
+  function updateBtn() {
+    var inFs = isFullscreen() && getFullscreenEl() === container;
+    btn.textContent = inFs ? "⊟" : "⛶";
+    btn.title = inFs ? "Tam ekrandan çık" : "Tam ekran";
+  }
+  document.addEventListener("fullscreenchange", updateBtn);
+  document.addEventListener("webkitfullscreenchange", updateBtn);
+  document.addEventListener("mozfullscreenchange", updateBtn);
+  document.addEventListener("MSFullscreenChange", updateBtn);
+  document.addEventListener("fullscreenchange", function () {
+    if (isFullscreen() && getFullscreenEl() === player) {
+      exitFs().then(function () { return requestFs(); }).catch(function () { });
+    }
+  });
+  document.addEventListener("webkitfullscreenchange", function () {
+    if (isFullscreen() && getFullscreenEl() === player) {
+      exitFs().then(function () { return requestFs(); }).catch(function () { });
+    }
+  });
+  btn.addEventListener("click", function () {
+    if (isFullscreen() && getFullscreenEl() === container) {
+      exitFs();
+    } else {
+      requestFs();
+    }
+  });
+})();
 function updateMuteButtonLabel() {
   var btn = document.getElementById("muteBtn");
   if (!btn) return;
@@ -720,7 +772,15 @@ document.getElementById("subtitleSelect").addEventListener("change", function ()
   var searchInput = document.getElementById("subtitleSearchInput");
   var searchLang = document.getElementById("subtitleSearchLang");
   var searchBtn = document.getElementById("subtitleSearchBtn");
+  var searchClearBtn = document.getElementById("subtitleSearchClearBtn");
   var searchResults = document.getElementById("subtitleSearchResults");
+
+  if (searchClearBtn) {
+    searchClearBtn.addEventListener("click", function () {
+      searchInput.value = "";
+      searchResults.innerHTML = "";
+    });
+  }
 
   searchToggle.addEventListener("click", function () {
     searchRow.classList.toggle("visible");
@@ -776,11 +836,14 @@ document.getElementById("subtitleSelect").addEventListener("change", function ()
           });
           var saveBtn = document.createElement("button");
           saveBtn.type = "button";
-          saveBtn.className = "btn";
+          saveBtn.className = "btn btn-sm";
           saveBtn.textContent = "İndir";
           saveBtn.title = "Videonun klasörüne kaydet";
           saveBtn.addEventListener("click", function () {
             if (!currentVideoPath) return;
+            var origText = saveBtn.textContent;
+            saveBtn.textContent = "İndiriliyor...";
+            saveBtn.classList.add("btn-loading");
             saveBtn.disabled = true;
             fetch("/api/subtitles/save?file_id=" + encodeURIComponent(fileId) + "&videoPath=" + encodeURIComponent(currentVideoPath), fetchOpts)
               .then(function (r) {
@@ -789,9 +852,25 @@ document.getElementById("subtitleSelect").addEventListener("change", function ()
               })
               .then(function (data) {
                 loadSubtitleOptions(currentVideoPath, data.path);
+                saveBtn.classList.remove("btn-loading");
+                saveBtn.classList.add("btn-success");
+                saveBtn.textContent = "✓ Kaydedildi";
                 saveBtn.disabled = false;
+                setTimeout(function () {
+                  saveBtn.classList.remove("btn-success");
+                  saveBtn.textContent = origText;
+                }, 2000);
               })
-              .catch(function () { saveBtn.disabled = false; });
+              .catch(function () {
+                saveBtn.classList.remove("btn-loading");
+                saveBtn.classList.add("btn-error");
+                saveBtn.textContent = "✕ Hata";
+                saveBtn.disabled = false;
+                setTimeout(function () {
+                  saveBtn.classList.remove("btn-error");
+                  saveBtn.textContent = origText;
+                }, 2000);
+              });
           });
           actions.appendChild(useBtn);
           actions.appendChild(saveBtn);
@@ -849,7 +928,7 @@ function renderListItems(itemsToShow) {
         name.textContent = "🎬 " + e.title + (e.time > 0 ? " (" + formatTime(e.time) + ")" : "");
         var favBtn = document.createElement("button");
         favBtn.type = "button";
-        favBtn.className = "btn-fav is-fav";
+        favBtn.className = "btn btn-icon btn-fav is-fav";
         favBtn.textContent = "⭐";
         favBtn.title = "Favorilerden kaldır";
         favBtn.onclick = function (ev) { toggleFavorite(e.path, e.title, ev); };
@@ -984,7 +1063,7 @@ function renderListItems(itemsToShow) {
       };
       var favBtn = document.createElement("button");
       favBtn.type = "button";
-      favBtn.className = "btn-fav" + (isFav ? " is-fav" : "");
+      favBtn.className = "btn btn-icon btn-fav" + (isFav ? " is-fav" : "");
       favBtn.textContent = isFav ? "⭐" : "☆";
       favBtn.title = isFav ? "Favorilerden kaldır" : "Favorilere ekle";
       favBtn.onclick = function (ev) { toggleFavorite(videoPath, item.name, ev); };

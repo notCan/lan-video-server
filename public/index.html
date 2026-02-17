@@ -3,9 +3,12 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0e0e0e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/icons/lan-video-server.png">
   <title>LAN Video Server</title>
 
   <link rel="stylesheet" href="/styles.css">
@@ -48,20 +51,21 @@
     <div class="player-sticky">
       <div id="videoTitle"></div>
       <div class="video-sub-wrap">
-        <video id="player" controls disableRemotePlayback controlsList="noremoteplayback"></video>
+        <video id="player" controls disableRemotePlayback controlsList="noremoteplayback nofullscreen"></video>
         <div id="subtitleOverlay" class="subtitle-overlay" aria-hidden="true"></div>
       </div>
       <div id="controls">
         <div class="controls-row1">
-          <button type="button" class="btn controls-num" onclick="seek(-30)">−30</button>
+          <button type="button" class="btn controls-num hide-narrow" onclick="seek(-30)">−30</button>
           <button type="button" class="btn controls-num" onclick="seek(-10)">−10</button>
           <button type="button" class="btn controls-num" onclick="seek(-5)">−5</button>
           <button type="button" class="btn btn-icon" id="playPauseBtn" onclick="toggle()" title="Oynat / Duraklat"><span
               id="playPauseLabel">▶️</span></button>
           <button type="button" class="btn btn-icon" onclick="closeVideo()" title="Videoyu kapat">⏹️</button>
+          <button type="button" class="btn btn-icon" id="fullscreenBtn" title="Tam ekran" aria-label="Tam ekran">⛶</button>
           <button type="button" class="btn controls-num" onclick="seek(5)">+5</button>
           <button type="button" class="btn controls-num" onclick="seek(10)">+10</button>
-          <button type="button" class="btn controls-num" onclick="seek(30)">+30</button>
+          <button type="button" class="btn controls-num hide-narrow" onclick="seek(30)">+30</button>
         </div>
         <div class="controls-time-slider-wrap">
           <div class="time-slider-tooltip-wrap" id="timeSliderTooltipWrap">
@@ -101,7 +105,7 @@
               <option value="">Yok</option>
             </select>
             <button type="button" class="btn btn-icon subtitle-search-toggle" id="subtitleSearchToggle"
-              title="Altyazı ara" aria-label="Altyazı ara">🔍</button>
+              title="Altyazı ara" aria-label="Altyazı ara">👁️‍🗨️​</button>
             <button type="button" class="btn btn-icon subtitle-settings-toggle" id="subtitleSettingsToggle"
               title="Altyazı ayarları" aria-label="Altyazı ayarları">⚙️</button>
           </div>
@@ -113,7 +117,9 @@
                 <option value="tr" selected>Türkçe</option>
                 <option value="en">İngilizce</option>
               </select>
-              <button type="button" class="btn btn-icon" id="subtitleSearchBtn" title="Ara">Ara</button>
+              <button type="button" class="btn btn-icon" id="subtitleSearchBtn" title="Ara" aria-label="Ara">🔍</button>
+              <button type="button" class="btn btn-icon" id="subtitleSearchClearBtn" title="Temizle"
+                aria-label="Temizle">✕</button>
             </div>
             <div id="subtitleSearchResults" class="subtitle-search-results"></div>
           </div>
@@ -156,7 +162,7 @@
     <div id="listWrap">
       <div class="search-wrap">
         <input type="text" id="searchInput" placeholder="Ara..." class="search-input" autocomplete="off">
-        <button type="button" class="search-clear-btn" id="searchClearBtn" title="Temizle"
+        <button type="button" class="btn btn-icon search-clear-btn" id="searchClearBtn" title="Temizle"
           aria-label="Temizle">✕</button>
       </div>
       <div id="list"></div>
