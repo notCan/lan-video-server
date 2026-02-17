@@ -108,7 +108,10 @@ function updateSubtitleOverlay() {
   if (cue) {
     el.textContent = cue.text;
     el.style.left = "calc(50% + " + subtitleOffsetX + "%)";
-    el.style.bottom = "calc(12% + " + subtitleOffsetY + "%)";
+    var container = el.closest(".video-sub-wrap");
+    var isFullscreen = container && (document.fullscreenElement === container || document.webkitFullscreenElement === container);
+    var bottomPct = isFullscreen ? 15 : 12;
+    el.style.bottom = "calc(" + bottomPct + "% + " + subtitleOffsetY + "% + env(safe-area-inset-bottom, 0px))";
     el.style.transform = "translateX(-50%)";
   } else {
     el.textContent = "";
@@ -491,6 +494,7 @@ document.getElementById("resumeDismissBtn").addEventListener("click", function (
     var inFs = isFullscreen() && getFullscreenEl() === container;
     btn.textContent = inFs ? "⊟" : "⛶";
     btn.title = inFs ? "Tam ekrandan çık" : "Tam ekran";
+    if (typeof updateSubtitleOverlay === "function") updateSubtitleOverlay();
   }
   document.addEventListener("fullscreenchange", updateBtn);
   document.addEventListener("webkitfullscreenchange", updateBtn);
