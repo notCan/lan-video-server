@@ -5,6 +5,8 @@ const { v4: uuidv4 } = require("uuid");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const cookieParser = require("cookie-parser");
+const ffmpeg = require("fluent-ffmpeg");
+const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path;
 
 const APP_DIR = typeof process.pkg !== "undefined" ? path.dirname(process.execPath) : __dirname;
 require("dotenv").config({ path: path.join(APP_DIR, ".env") });
@@ -109,14 +111,21 @@ try {
   process.exit(1);
 }
 
-const VIDEO_EXTENSIONS = [".mp4", ".mkv", ".avi", ".mov", ".webm"];
+const VIDEO_EXTENSIONS = [".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".wmv", ".flv", ".mpeg", ".mpg"];
 const MIME_BY_EXT = {
   ".mp4": "video/mp4",
+  ".m4v": "video/mp4",
   ".mkv": "video/x-matroska",
   ".avi": "video/x-msvideo",
   ".mov": "video/quicktime",
-  ".webm": "video/webm"
+  ".webm": "video/webm",
+  ".wmv": "video/x-ms-wmv",
+  ".flv": "video/x-flv",
+  ".mpeg": "video/mpeg",
+  ".mpg": "video/mpeg"
 };
+const BROWSER_NATIVE = [".mp4", ".m4v", ".webm"];
+ffmpeg.setFfmpegPath(ffmpegPath);
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
@@ -251,6 +260,11 @@ function getVideoMime(filePath) {
   return MIME_BY_EXT[path.extname(filePath).toLowerCase()] || "video/mp4";
 }
 
+function needsTranscode(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  return !BROWSER_NATIVE.includes(ext);
+}
+
 app.get("/video", requireAuth, (req, res) => {
   const rawPath = (req.query.file || "").replace(/\\/g, "/").trim();
   const parts = rawPath.split("/").filter(Boolean);
@@ -275,6 +289,24 @@ app.get("/video", requireAuth, (req, res) => {
 
   const stat = fs.statSync(filePath);
   const range = req.headers.range;
+
+  if (needsTranscode(filePath)) {
+    res.setHeader("Content-Type", "video/mp4");
+    res.setHeader("Accept-Ranges", "none");
+    res.status(200);
+    ffmpeg(filePath)
+      .outputOptions("-c", "copy", "-movflags", "frag_keyframe+empty_moov+default_base_moof+omit_tfhd_offset")
+      .format("mp4")
+      .on("error", (err) => {
+        if (!res.writableEnded) {
+          if (!res.headersSent) res.sendStatus(500);
+          else res.end();
+        }
+        console.error("ffmpeg hata:", err.message);
+      })
+      .pipe(res, { end: true });
+    return;
+  }
 
   if (!range) {
     res.status(416).send("Range header gerekli");

@@ -65,6 +65,14 @@ body {
   display: block;
 }
 
+#player::-webkit-media-controls-fullscreen-button {
+  display: none !important;
+}
+
+#player::-moz-media-controls-fullscreen-button {
+  display: none !important;
+}
+
 .subtitle-overlay {
   position: absolute;
   left: 50%;
@@ -87,25 +95,50 @@ body {
   display: none;
 }
 
-.video-sub-wrap:fullscreen,
-.video-sub-wrap:-webkit-full-screen,
-.video-sub-wrap:-moz-full-screen,
-.video-sub-wrap:-ms-fullscreen {
+.video-sub-wrap:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  background: #000;
+}
+.video-sub-wrap:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  background: #000;
+}
+.video-sub-wrap:-moz-full-screen {
   width: 100vw;
   height: 100vh;
   height: 100dvh;
   background: #000;
 }
 
-.video-sub-wrap:fullscreen #player,
-.video-sub-wrap:-webkit-full-screen #player,
-.video-sub-wrap:-moz-full-screen #player,
-.video-sub-wrap:-ms-fullscreen #player {
+.video-sub-wrap:fullscreen #player {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
+  max-height: none;
+  object-fit: contain;
+}
+.video-sub-wrap:-webkit-full-screen #player {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: contain;
+}
+.video-sub-wrap:-moz-full-screen #player {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  max-height: none;
   object-fit: contain;
 }
 

@@ -470,19 +470,19 @@ document.getElementById("resumeDismissBtn").addEventListener("click", function (
   var container = document.querySelector(".video-sub-wrap");
   var btn = document.getElementById("fullscreenBtn");
   if (!container || !btn) return;
-  function isFullscreen() {
-    return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+
+  function fsElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement || null;
   }
-  function getFullscreenEl() {
-    return document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
-  }
-  function requestFs() {
-    if (container.requestFullscreen) return container.requestFullscreen();
-    if (container.webkitRequestFullscreen) return container.webkitRequestFullscreen();
-    if (container.mozRequestFullScreen) return container.mozRequestFullScreen();
-    if (container.msRequestFullscreen) return container.msRequestFullscreen();
+
+  function requestFs(el) {
+    if (el.requestFullscreen) return el.requestFullscreen();
+    if (el.webkitRequestFullscreen) return el.webkitRequestFullscreen();
+    if (el.mozRequestFullScreen) return el.mozRequestFullScreen();
+    if (el.msRequestFullscreen) return el.msRequestFullscreen();
     return Promise.reject();
   }
+
   function exitFs() {
     if (document.exitFullscreen) return document.exitFullscreen();
     if (document.webkitExitFullscreen) return document.webkitExitFullscreen();
@@ -490,31 +490,37 @@ document.getElementById("resumeDismissBtn").addEventListener("click", function (
     if (document.msExitFullscreen) return document.msExitFullscreen();
     return Promise.reject();
   }
-  function updateBtn() {
-    var inFs = isFullscreen() && getFullscreenEl() === container;
+
+  function onFsChange() {
+    var el = fsElement();
+    if (el === player) {
+      exitFs().then(function () { requestFs(container); }).catch(function () {});
+      return;
+    }
+    var inFs = el === container;
     btn.textContent = inFs ? "⊟" : "⛶";
     btn.title = inFs ? "Tam ekrandan çık" : "Tam ekran";
     if (typeof updateSubtitleOverlay === "function") updateSubtitleOverlay();
   }
-  document.addEventListener("fullscreenchange", updateBtn);
-  document.addEventListener("webkitfullscreenchange", updateBtn);
-  document.addEventListener("mozfullscreenchange", updateBtn);
-  document.addEventListener("MSFullscreenChange", updateBtn);
-  document.addEventListener("fullscreenchange", function () {
-    if (isFullscreen() && getFullscreenEl() === player) {
-      exitFs().then(function () { return requestFs(); }).catch(function () { });
-    }
+
+  ["fullscreenchange", "webkitfullscreenchange", "mozfullscreenchange", "MSFullscreenChange"].forEach(function (evt) {
+    document.addEventListener(evt, onFsChange);
   });
-  document.addEventListener("webkitfullscreenchange", function () {
-    if (isFullscreen() && getFullscreenEl() === player) {
-      exitFs().then(function () { return requestFs(); }).catch(function () { });
-    }
-  });
+
   btn.addEventListener("click", function () {
-    if (isFullscreen() && getFullscreenEl() === container) {
+    if (fsElement() === container) {
       exitFs();
     } else {
-      requestFs();
+      requestFs(container);
+    }
+  });
+
+  player.addEventListener("dblclick", function (e) {
+    e.preventDefault();
+    if (fsElement() === container) {
+      exitFs();
+    } else {
+      requestFs(container);
     }
   });
 })();
